@@ -121,6 +121,10 @@ async function initStudio() {
     state.keyframes = data.keyframes || [];
     state.waveform = data.waveform || [];
     state.clips = data.clips || [];
+    if (data.default_local_save_dir) {
+      const folderInput = document.getElementById("localSaveDirInput");
+      if (folderInput) folderInput.value = data.default_local_save_dir;
+    }
     state.activeSourceUrl = data.active_source || "/static/media/gta6_demo_source.mp4";
     if (state.sources.length > 0) {
       state.activeSourceId = state.sources[0].id;
@@ -246,12 +250,95 @@ function renderRulerTicks() {
 
 // ---------- LIVE PROCESSING LOGS ----------
 
+let importProgressTimerId = null;
+let importProgressStartMs = 0;
+
+function renderModalProgressState(prog) {
+  const panel = document.getElementById("importProgressPanel");
+  if (!panel || !prog) return;
+  const stageEl = document.getElementById("importProgressStage");
+  const clipBadgeEl = document.getElementById("importProgressClipBadge");
+  const timerEl = document.getElementById("importProgressTimer");
+  const pctEl = document.getElementById("importProgressPct");
+  const fillEl = document.getElementById("importProgressBarFill");
+  const statusEl = document.getElementById("importModalStatus");
+  const spinnerEl = document.getElementById("importProgressSpinner");
+
+  const pct = Math.max(0, Math.min(100, prog.percent || 0));
+  if (stageEl) stageEl.textContent = prog.stage || "PROCESSING";
+  if (clipBadgeEl) clipBadgeEl.textContent = `CLIP ${prog.current_clip || 0} / ${prog.total_clips || 1}`;
+  if (timerEl) {
+    const elapsed = importProgressStartMs
+      ? ((Date.now() - importProgressStartMs) / 1000).toFixed(1)
+      : (prog.elapsed_sec || 0).toFixed(1);
+    timerEl.textContent = `${elapsed}s`;
+  }
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  if (fillEl) fillEl.style.width = `${pct}%`;
+  if (statusEl && prog.detail) statusEl.textContent = prog.detail;
+  if (spinnerEl) {
+    spinnerEl.classList.toggle("done", !prog.active && pct >= 100);
+  }
+}
+
+function startImportProgressMonitor(totalClips, initialStage, initialDetail, btnEl = null) {
+  const panel = document.getElementById("importProgressPanel");
+  const feedEl = document.getElementById("importModalLogFeed");
+  if (panel) panel.classList.remove("hidden");
+  if (feedEl) feedEl.innerHTML = "";
+  importProgressStartMs = Date.now();
+
+  renderModalProgressState({
+    active: true,
+    percent: 5,
+    current_clip: 0,
+    total_clips: totalClips,
+    stage: initialStage,
+    detail: initialDetail,
+  });
+
+  if (importProgressTimerId) clearInterval(importProgressTimerId);
+  importProgressTimerId = setInterval(async () => {
+    await pollPipelineLogs();
+    if (btnEl && btnEl.disabled) {
+      const pctText = document.getElementById("importProgressPct")?.textContent || "";
+      const stageText = document.getElementById("importProgressStage")?.textContent || "EXTRACTING";
+      if (btnEl.classList.contains("media-more-btn")) {
+        btnEl.textContent = pctText || "…";
+      } else {
+        btnEl.textContent = `${stageText} (${pctText})...`;
+      }
+    }
+  }, 400);
+}
+
+function stopImportProgressMonitor(finalPct, finalStage, finalDetail, isError = false) {
+  if (importProgressTimerId) {
+    clearInterval(importProgressTimerId);
+    importProgressTimerId = null;
+  }
+  const totalClips = parseInt(document.getElementById("importNumClipsInput")?.value, 10) || state.numClips || 1;
+  renderModalProgressState({
+    active: false,
+    percent: finalPct,
+    current_clip: isError ? 0 : totalClips,
+    total_clips: totalClips,
+    stage: finalStage,
+    detail: finalDetail,
+  });
+  importProgressStartMs = 0;
+}
+
 async function pollPipelineLogs() {
   try {
     const res = await fetch(`/api/logs?since_id=${state.lastLogId}`);
     if (!res.ok) return;
     const data = await res.json();
+    if (data.progress && (data.progress.active || importProgressTimerId)) {
+      renderModalProgressState(data.progress);
+    }
     if (data.logs && data.logs.length > 0) {
+      const modalFeed = document.getElementById("importModalLogFeed");
       data.logs.forEach((entry) => {
         const row = document.createElement("div");
         row.className = `log-row ${entry.level || "info"}`;
@@ -261,6 +348,18 @@ async function pollPipelineLogs() {
           <span class="log-msg">${entry.message}</span>
         `;
         logsTerminal.appendChild(row);
+
+        if (modalFeed) {
+          const mLine = document.createElement("div");
+          mLine.className = "import-log-line";
+          mLine.innerHTML = `
+            <span class="import-log-ts">${entry.ts}</span>
+            <span class="import-log-tool">[${entry.tool}]</span>
+            <span class="import-log-msg ${entry.level || "info"}">${entry.message}</span>
+          `;
+          modalFeed.appendChild(mLine);
+          modalFeed.scrollTop = modalFeed.scrollHeight;
+        }
       });
       state.lastLogId = data.latest_id;
       logsTerminal.scrollTop = logsTerminal.scrollHeight;
@@ -443,17 +542,24 @@ async function deliverClipToPostizManual(filename, btnEl) {
 async function extractMoreFromSameVideo(sourceId = state.activeSourceId, startOffset = null, btnEl = null) {
   const targetBtn = btnEl || document.getElementById("moreClipsSameVideoBtn");
   const origText = targetBtn ? targetBtn.textContent : "";
+  const numToExtract = state.numClips || 1;
   if (targetBtn) {
     targetBtn.disabled = true;
-    targetBtn.textContent = origText === "+" ? "…" : "EXTRACTING...";
+    targetBtn.textContent = origText === "+" ? "…" : `EXTRACTING 0/${numToExtract}...`;
   }
+  startImportProgressMonitor(
+    numToExtract,
+    "PROBING NEXT VIRAL MOMENTS",
+    `Extracting ${numToExtract} more non-overlapping clip(s) from same video...`,
+    targetBtn
+  );
   try {
     const res = await fetch("/api/more-clips-same-video", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         source_id: sourceId || state.activeSourceId || null,
-        num_clips: state.numClips || 1,
+        num_clips: numToExtract,
         target_duration: state.duration || 30.0,
         start_offset: startOffset
       })
@@ -461,9 +567,11 @@ async function extractMoreFromSameVideo(sourceId = state.activeSourceId, startOf
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Failed to extract more clips from this video");
     applyImportedSource(data, state.duration);
-    pollPipelineLogs();
+    await pollPipelineLogs();
+    stopImportProgressMonitor(100, "EXTRACTION COMPLETE", `✓ Added ${data.num_clips_extracted || 1} more clip(s) into Media Bin!`);
   } catch (err) {
     console.error("More clips error:", err);
+    stopImportProgressMonitor(0, "EXTRACTION ERROR", `Error: ${err.message}`, true);
   } finally {
     if (targetBtn) {
       targetBtn.disabled = false;
@@ -1471,15 +1579,23 @@ function setupModals() {
     const startOffset = startRaw !== "" ? parseFloat(startRaw) : null;
     const statusEl = document.getElementById("importModalStatus");
     const btn = document.getElementById("runYtdlpBtn");
+    const origBtnText = "↓ EXTRACT VIRAL WINDOW VIA YT-DLP";
 
     if (!url) {
+      const panel = document.getElementById("importProgressPanel");
+      if (panel) panel.classList.remove("hidden");
       statusEl.textContent = "Please paste a valid YouTube, Twitch, or X/Twitter video URL.";
       return;
     }
 
     setNumClipsToGenerate(numClipsToExtract);
     btn.disabled = true;
-    statusEl.textContent = `Probing VOD heatmap & extracting ${numClipsToExtract} viral clip(s) × ${winDur}s via yt-dlp...`;
+    startImportProgressMonitor(
+      numClipsToExtract,
+      "PROBING STREAM VOD HEATMAP",
+      `Probing VOD heatmap & extracting ${numClipsToExtract} viral clip(s) × ${winDur}s via yt-dlp...`,
+      btn
+    );
 
     try {
       const res = await fetch("/api/download-url", {
@@ -1497,13 +1613,18 @@ function setupModals() {
       if (!res.ok) throw new Error(data.detail || "yt-dlp failed");
 
       applyImportedSource(data, winDur);
-      pollPipelineLogs();
-      statusEl.textContent = `✓ Extracted ${data.num_clips_extracted || 1} viral clip(s) into Media Bin!`;
-      setTimeout(() => importModal.classList.add("hidden"), 900);
+      await pollPipelineLogs();
+      stopImportProgressMonitor(
+        100,
+        "EXTRACTION COMPLETE",
+        `✓ Extracted ${data.num_clips_extracted || 1} viral clip(s) into Media Bin!`
+      );
+      setTimeout(() => importModal.classList.add("hidden"), 1200);
     } catch (err) {
-      statusEl.textContent = `Error: ${err.message}`;
+      stopImportProgressMonitor(0, "EXTRACTION FAILED", `Error: ${err.message}`, true);
     } finally {
       btn.disabled = false;
+      btn.textContent = origBtnText;
     }
   });
 
@@ -1517,15 +1638,23 @@ function setupModals() {
     const startOffset = startRaw !== "" ? parseFloat(startRaw) : 0.0;
     const statusEl = document.getElementById("importModalStatus");
     const btn = document.getElementById("runUploadBtn");
+    const origBtnText = "↑ EXTRACT LOCAL WINDOW & SPEAKER-TRACK";
 
     if (!fileInput.files || !fileInput.files[0]) {
+      const panel = document.getElementById("importProgressPanel");
+      if (panel) panel.classList.remove("hidden");
       statusEl.textContent = "Please select a local MP4/MKV/MOV video file first.";
       return;
     }
 
     setNumClipsToGenerate(numClipsToExtract);
     btn.disabled = true;
-    statusEl.textContent = `Fast-seeking local file to ${startOffset}s and extracting ${winDur}s window...`;
+    startImportProgressMonitor(
+      1,
+      "EXTRACTING LOCAL VIDEO WINDOW",
+      `Fast-seeking local file to ${startOffset}s and extracting ${winDur}s window...`,
+      btn
+    );
 
     try {
       const formData = new FormData();
@@ -1543,13 +1672,18 @@ function setupModals() {
       if (!res.ok) throw new Error(data.detail || "Upload failed");
 
       applyImportedSource(data, winDur);
-      pollPipelineLogs();
-      statusEl.textContent = `✓ Extracted & Speaker-Tracked ${data.source.title}!`;
-      setTimeout(() => importModal.classList.add("hidden"), 900);
+      await pollPipelineLogs();
+      stopImportProgressMonitor(
+        100,
+        "EXTRACTION COMPLETE",
+        `✓ Extracted & Speaker-Tracked ${data.source.title}!`
+      );
+      setTimeout(() => importModal.classList.add("hidden"), 1200);
     } catch (err) {
-      statusEl.textContent = `Error: ${err.message}`;
+      stopImportProgressMonitor(0, "EXTRACTION FAILED", `Error: ${err.message}`, true);
     } finally {
       btn.disabled = false;
+      btn.textContent = origBtnText;
     }
   });
 }

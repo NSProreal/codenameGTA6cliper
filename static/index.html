@@ -353,7 +353,7 @@
                   type="text"
                   id="localSaveDirInput"
                   class="local-folder-input"
-                  value="D:\Projects\clin_anti\saved_shorts"
+                  value="D:\Projects\codenameGTA6cliper\saved_shorts"
                   title="Local folder where exported Shorts are saved on your PC"
                 />
                 <button class="open-folder-btn" id="openLocalFolderBtn" title="Open local save folder in Windows File Explorer">📂 OPEN</button>
@@ -590,7 +590,25 @@
           <button class="modal-primary-btn full-w" id="runUploadBtn">↑ EXTRACT LOCAL WINDOW &amp; SPEAKER-TRACK</button>
         </div>
 
-        <div class="modal-status" id="importModalStatus"></div>
+        <!-- LIVE EXTRACTION PROGRESS PANEL INSIDE MODAL -->
+        <div class="import-progress-panel hidden" id="importProgressPanel">
+          <div class="import-progress-header">
+            <div class="import-progress-left">
+              <span class="import-spinner" id="importProgressSpinner"></span>
+              <span class="import-progress-stage" id="importProgressStage">PROBING STREAM VOD HEATMAP</span>
+            </div>
+            <div class="import-progress-right">
+              <span class="import-clip-badge" id="importProgressClipBadge">CLIP 0 / 1</span>
+              <span class="import-timer-badge" id="importProgressTimer">0.0s</span>
+              <span class="import-pct-badge" id="importProgressPct">0%</span>
+            </div>
+          </div>
+          <div class="import-progress-track">
+            <div class="import-progress-fill" id="importProgressBarFill" style="width: 0%"></div>
+          </div>
+          <div class="modal-status" id="importModalStatus"></div>
+          <div class="import-log-feed" id="importModalLogFeed"></div>
+        </div>
       </div>
     </div>
   </div>

@@ -32,9 +32,40 @@ for d in [STATIC_DIR, MEDIA_DIR, EXPORTS_DIR, UPLOADS_DIR, LOCAL_SAVE_DIR]:
 
 app = FastAPI(title="CLIP STUDIO / VI - GTA 6 AI Viral Clipping Engine")
 
-# ---------- LIVE PROCESSING LOGS BUFFER ----------
+# ---------- LIVE PROCESSING LOGS & EXTRACTION PROGRESS BUFFER ----------
 PIPELINE_LOGS: List[Dict[str, Any]] = []
 MAX_LOGS = 250
+
+EXTRACTION_PROGRESS: Dict[str, Any] = {
+    "active": False,
+    "percent": 0,
+    "current_clip": 0,
+    "total_clips": 1,
+    "stage": "IDLE",
+    "detail": "",
+    "started_at": 0.0,
+}
+
+
+def set_progress(
+    active: bool,
+    percent: int,
+    current_clip: int = 0,
+    total_clips: int = 1,
+    stage: str = "PROCESSING",
+    detail: str = "",
+):
+    """Updates real-time extraction/processing progress for the modal & studio UI."""
+    if active and not EXTRACTION_PROGRESS.get("active"):
+        EXTRACTION_PROGRESS["started_at"] = time.time()
+    EXTRACTION_PROGRESS["active"] = active
+    EXTRACTION_PROGRESS["percent"] = int(max(0, min(100, percent)))
+    EXTRACTION_PROGRESS["current_clip"] = int(current_clip)
+    EXTRACTION_PROGRESS["total_clips"] = int(max(1, total_clips))
+    EXTRACTION_PROGRESS["stage"] = stage
+    EXTRACTION_PROGRESS["detail"] = detail
+    elapsed = round(max(0.0, time.time() - EXTRACTION_PROGRESS.get("started_at", time.time())), 1) if EXTRACTION_PROGRESS.get("started_at") else 0.0
+    EXTRACTION_PROGRESS["elapsed_sec"] = elapsed
 
 
 def log_event(tool: str, message: str, level: str = "info"):
@@ -63,7 +94,27 @@ log_event("Postiz", "Postiz Delivery bridge ready (Manual & Automatic publishing
 def load_clips_registry() -> List[Dict[str, Any]]:
     if CLIPS_META_FILE.exists():
         try:
-            return json.loads(CLIPS_META_FILE.read_text(encoding="utf-8"))
+            raw_list = json.loads(CLIPS_META_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw_list, list):
+                valid_list = []
+                changed = False
+                for item in raw_list:
+                    fname = item.get("filename", "")
+                    if not fname:
+                        changed = True
+                        continue
+                    exp_p = EXPORTS_DIR / fname
+                    loc_p = LOCAL_SAVE_DIR / fname
+                    if not exp_p.exists() and loc_p.exists():
+                        shutil.copy2(loc_p, exp_p)
+                    if exp_p.exists():
+                        item["local_path"] = str((LOCAL_SAVE_DIR / fname).resolve())
+                        valid_list.append(item)
+                    else:
+                        changed = True
+                if changed:
+                    CLIPS_META_FILE.write_text(json.dumps(valid_list, indent=2), encoding="utf-8")
+                return valid_list
         except Exception:
             pass
     # Scan existing MP4s in exports dir if registry doesn't exist yet
@@ -74,6 +125,7 @@ def load_clips_registry() -> List[Dict[str, Any]]:
             "id": mp4.stem,
             "filename": mp4.name,
             "download_url": f"/static/exports/{mp4.name}",
+            "local_path": str((LOCAL_SAVE_DIR / mp4.name).resolve()),
             "duration": 20.0,
             "resolution": "1080x1920",
             "fps": 60,
@@ -539,9 +591,23 @@ def deliver_clip_to_postiz(
 
 @app.get("/api/logs")
 async def get_pipeline_logs(since_id: int = 0):
-    """Returns live processing log events newer than since_id."""
+    """Returns live processing log events newer than since_id plus real-time progress."""
     new_logs = [entry for entry in PIPELINE_LOGS if entry["id"] > since_id]
-    return {"logs": new_logs, "latest_id": PIPELINE_LOGS[-1]["id"] if PIPELINE_LOGS else 0}
+    if EXTRACTION_PROGRESS.get("active") and EXTRACTION_PROGRESS.get("started_at"):
+        EXTRACTION_PROGRESS["elapsed_sec"] = round(max(0.0, time.time() - EXTRACTION_PROGRESS["started_at"]), 1)
+    return {
+        "logs": new_logs,
+        "latest_id": PIPELINE_LOGS[-1]["id"] if PIPELINE_LOGS else 0,
+        "progress": EXTRACTION_PROGRESS,
+    }
+
+
+@app.get("/api/progress")
+async def get_extraction_progress():
+    """Returns real-time extraction progress for the Stream VOD Partial Extractor modal."""
+    if EXTRACTION_PROGRESS.get("active") and EXTRACTION_PROGRESS.get("started_at"):
+        EXTRACTION_PROGRESS["elapsed_sec"] = round(max(0.0, time.time() - EXTRACTION_PROGRESS["started_at"]), 1)
+    return EXTRACTION_PROGRESS
 
 
 @app.post("/api/logs/clear")
@@ -693,7 +759,7 @@ async def get_initial_project():
 
 
 @app.post("/api/analyze-viral")
-async def analyze_viral_moments(req: AnalyzeRequest):
+def analyze_viral_moments(req: AnalyzeRequest):
     video_path = resolve_local_video_path(req.source_video)
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Source video not found")
@@ -869,7 +935,7 @@ Return ONLY valid JSON matching this exact structure:
 
 
 @app.post("/api/upload-video")
-async def upload_video(
+def upload_video(
     file: UploadFile = File(...),
     tag: str = Form("CUSTOM"),
     target_duration: float = Form(30.0),
@@ -892,12 +958,14 @@ async def upload_video(
     out_name = f"source_{uid}.mp4"
     out_path = MEDIA_DIR / out_name
 
+    set_progress(True, 12, 1, 1, "RECEIVING LOCAL FILE", f"Receiving '{file.filename}' & seeking to {offset_sec:.1f}s...")
     log_event("OBS+PyAV", f"Receiving local stream file '{file.filename}' — extracting {clip_dur:.0f}s window starting at {offset_sec:.1f}s...", "info")
 
     raw_temp = UPLOADS_DIR / f"raw_{uid}{ext}"
     with open(raw_temp, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    set_progress(True, 45, 1, 1, "FFMPEG KEYFRAME SLICE", f"Slicing {clip_dur:.0f}s window starting at {offset_sec:.1f}s via FFmpeg...")
     # Fast input-side seek (-ss before -i) avoids decoding huge multi-GB local files
     subprocess.run([
         "ffmpeg", "-y", "-v", "error",
@@ -912,15 +980,18 @@ async def upload_video(
     raw_temp.unlink(missing_ok=True)
 
     if not out_path.exists():
+        set_progress(False, 0, 1, 1, "ERROR", "Failed to process uploaded video file")
         log_event("FFmpeg", "Failed to process uploaded video file", "error")
         raise HTTPException(status_code=500, detail="Failed to process uploaded video with FFmpeg")
 
+    set_progress(True, 78, 1, 1, "OPENCV SPEAKER TRACKING", "Generating filmstrip, audio RMS waveform & OpenCV speaker crop...")
     assets = generate_filmstrip_and_thumb(out_path, f"source_{uid}")
     waveform = compute_audio_waveform(out_path)
     keyframes = track_subjects_opencv(out_path, smart_speaker_crop=smart_speaker_crop, max_duration=clip_dur)
 
     clean_tag = (tag or Path(file.filename or "CLIP").stem)[:12].upper()
     log_event("OBS+OpenCV", f"Loaded local clip {clean_tag} ({assets['duration']}s) into Media Bin", "success")
+    set_progress(False, 100, 1, 1, "COMPLETED", f"✓ Extracted & Speaker-Tracked {clean_tag} ({assets['duration']}s)!")
 
     new_src = {
         "id": f"src_{uid}",
@@ -947,7 +1018,7 @@ async def upload_video(
 
 
 @app.post("/api/download-url")
-async def download_from_url(req: UrlDownloadRequest):
+def download_from_url(req: UrlDownloadRequest):
     """
     Smart Stream VOD Partial-Range Downloader via yt-dlp + FFmpeg HTTP Range Slicing.
     Supports extracting 1 to 10 distinct viral clips from a single YouTube/Twitch VOD URL!
@@ -956,6 +1027,14 @@ async def download_from_url(req: UrlDownloadRequest):
 
     clip_dur = float(np.clip(req.target_duration, 15.0, 60.0))
     num_clips = int(np.clip(req.num_clips, 1, 10))
+    set_progress(
+        True,
+        6,
+        0,
+        num_clips,
+        "PROBING STREAM VOD HEATMAP",
+        f"Probing stream VOD metadata, DASH stream URLs & Most Replayed heatmap ({num_clips} clip(s) × {clip_dur:.0f}s)...",
+    )
     log_event("yt-dlp", f"Probing stream VOD metadata, DASH formats & heatmap for {req.url} (Requesting {num_clips} clip(s) × {clip_dur:.0f}s)...", "info")
 
     title = req.label or "YT-DLP CLIP"
@@ -1039,6 +1118,15 @@ async def download_from_url(req: UrlDownloadRequest):
         base_n = len(existing_starts)
         start_times = [round((base_n + i) * clip_dur, 1) for i in range(num_clips)]
 
+    set_progress(
+        True,
+        15,
+        0,
+        num_clips,
+        "VIRAL PEAKS LOCKED",
+        f"Locked {len(start_times)} viral window(s) at {start_times}s — beginning partial stream extraction...",
+    )
+
     short_base = re.sub(r"\s*#\d+$", "", (req.label or title.split()[0] or "YTDLP")).strip()[:8].upper()
     existing_count = len(existing_starts)
     extracted_sources = []
@@ -1053,6 +1141,15 @@ async def download_from_url(req: UrlDownloadRequest):
         final_path = MEDIA_DIR / final_name
         end_sec = start_sec + clip_dur
 
+        pct_slice = int(15 + (idx / num_clips) * 80)
+        set_progress(
+            True,
+            pct_slice,
+            idx + 1,
+            num_clips,
+            f"SLICING CLIP {idx + 1} / {num_clips}",
+            f"[Clip {idx + 1}/{num_clips}] Extracting {clip_dur:.0f}s range [{start_sec:.1f}s -> {end_sec:.1f}s] via FFmpeg HTTP Range...",
+        )
         log_event("yt-dlp", f"[Clip {idx + 1}/{num_clips}] Extracting {clip_dur:.0f}s range [{start_sec:.1f}s -> {end_sec:.1f}s]...", "info")
 
         direct_sliced = False
@@ -1100,11 +1197,13 @@ async def download_from_url(req: UrlDownloadRequest):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     ydl.download([req.url])
             except Exception as e:
+                set_progress(False, 0, idx + 1, num_clips, "ERROR", f"yt-dlp download failed: {str(e)[:140]}")
                 log_event("yt-dlp", f"Download error: {str(e)[:140]}", "error")
                 raise HTTPException(status_code=400, detail=f"yt-dlp download failed: {str(e)[:180]}")
 
             downloaded_files = list(UPLOADS_DIR.glob(f"ytdlp_{uid}.*"))
             if not downloaded_files:
+                set_progress(False, 0, idx + 1, num_clips, "ERROR", "yt-dlp finished but output file was not found")
                 raise HTTPException(status_code=500, detail="yt-dlp finished but output file was not found")
 
             src_file = downloaded_files[0]
@@ -1119,6 +1218,15 @@ async def download_from_url(req: UrlDownloadRequest):
             ], timeout=60)
             src_file.unlink(missing_ok=True)
 
+        pct_cv = int(15 + ((idx + 0.65) / num_clips) * 80)
+        set_progress(
+            True,
+            pct_cv,
+            idx + 1,
+            num_clips,
+            f"SPEAKER TRACKING {idx + 1} / {num_clips}",
+            f"[Clip {idx + 1}/{num_clips}] Generating filmstrip, audio waveform & OpenCV speaker tracking...",
+        )
         assets = generate_filmstrip_and_thumb(final_path, f"ytdlp_{uid}")
         last_waveform = compute_audio_waveform(final_path)
         last_keyframes = track_subjects_opencv(final_path, smart_speaker_crop=True, max_duration=clip_dur)
@@ -1138,12 +1246,29 @@ async def download_from_url(req: UrlDownloadRequest):
             "origin_url": req.url,
             "vod_start_sec": start_sec
         })
+        pct_done = int(15 + ((idx + 1) / num_clips) * 80)
+        set_progress(
+            True,
+            pct_done,
+            idx + 1,
+            num_clips,
+            f"CLIP {idx + 1} / {num_clips} READY",
+            f"✓ Completed {clip_tag} ({int(clip_dur)}s @ {int(start_sec)}s)",
+        )
 
     cur_sources = load_sources_registry()
     cur_sources = extracted_sources + cur_sources
     save_sources_registry(cur_sources)
 
     log_event("yt-dlp", f"Extracted {len(extracted_sources)} new viral clip(s) into Media Bin!", "success")
+    set_progress(
+        False,
+        100,
+        num_clips,
+        num_clips,
+        "EXTRACTION COMPLETE",
+        f"✓ Extracted {len(extracted_sources)} viral clip(s) into Media Bin!",
+    )
 
     return {
         "status": "ok",
@@ -1157,7 +1282,7 @@ async def download_from_url(req: UrlDownloadRequest):
 
 
 @app.post("/api/more-clips-same-video")
-async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
+def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
     """
     Extracts additional non-overlapping viral clips from the same video (either from its original
     YouTube/Twitch VOD URL at the next unused viral heatmap peaks, or by slicing new sub-clips
@@ -1180,7 +1305,7 @@ async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
     if origin_url and req.start_offset is None:
         base_tag = re.sub(r"\s*#\d+$", "", (target_src.get("tag", "GTA6") if target_src else "GTA6")).strip()
         log_event("Media Bin", f"Fetching {num_clips} MORE viral clip(s) from same stream VOD ({origin_url})...", "info")
-        return await download_from_url(
+        return download_from_url(
             UrlDownloadRequest(
                 url=origin_url,
                 label=base_tag,
@@ -1200,6 +1325,7 @@ async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
     base_tag = re.sub(r"\s*#\d+$", "", (target_src.get("tag", "CLIP") if target_src else "CLIP")).strip()[:8].upper()
     existing_count = len([s for s in sources if s.get("tag", "").startswith(base_tag)])
 
+    set_progress(True, 10, 0, num_clips, "SUB-CLIPPING VIDEO", f"Extracting {num_clips} new sub-clip(s) from '{src_path.name}'...")
     log_event("FFmpeg+OpenCV", f"Extracting {num_clips} new sub-clip(s) from '{src_path.name}'...", "info")
 
     new_sources = []
@@ -1217,6 +1343,9 @@ async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
         else:
             stride = max(2.0, (file_dur - 2.0) / max(1, num_clips + 1))
             start_t = round(((existing_count + i + 1) * stride) % max(1.0, file_dur - 2.0), 2)
+
+        pct_slice = int(12 + (i / num_clips) * 82)
+        set_progress(True, pct_slice, i + 1, num_clips, f"SLICING SUB-CLIP {i + 1} / {num_clips}", f"[Clip {i + 1}/{num_clips}] Slicing {sub_dur:.0f}s starting at {start_t}s...")
 
         stream_loop = ["-stream_loop", "-1"] if (start_t + sub_dur) > file_dur else []
         subprocess.run([
@@ -1252,6 +1381,7 @@ async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
 
     cur_sources = new_sources + sources
     save_sources_registry(cur_sources)
+    set_progress(False, 100, num_clips, num_clips, "COMPLETED", f"✓ Added {len(new_sources)} more clip(s) into Media Bin!")
     log_event("Media Bin", f"Added {len(new_sources)} more clip(s) from same video into Media Bin!", "success")
 
     return {
@@ -1266,7 +1396,7 @@ async def extract_more_clips_from_same_video(req: MoreClipsSameVideoRequest):
 
 
 @app.post("/api/export-short")
-async def export_vertical_short(req: ExportRequest):
+def export_vertical_short(req: ExportRequest):
     """
     Renders 1 to 10 vertical 9:16 (1080x1920 @ 60fps, SAR 1:1) H.264 MP4 Shorts using FFmpeg,
     Smart Speaker Cropping keyframes, RGB color boost, and pysubs2/libass subtitles.
@@ -1457,7 +1587,8 @@ async def export_vertical_short(req: ExportRequest):
         # Handle Local Disk Save
         saved_local_path = str(out_path)
         if req.auto_save_local:
-            target_dir = Path(req.local_save_dir.strip()) if (req.local_save_dir and req.local_save_dir.strip()) else LOCAL_SAVE_DIR
+            raw_dir = (req.local_save_dir or "").strip()
+            target_dir = LOCAL_SAVE_DIR if (not raw_dir or "clin_anti" in raw_dir.lower()) else Path(raw_dir)
             try:
                 target_dir.mkdir(parents=True, exist_ok=True)
                 dest_file = target_dir / out_filename
@@ -1513,13 +1644,41 @@ async def export_vertical_short(req: ExportRequest):
 
 
 @app.post("/api/save-local")
-async def save_clip_locally(req: SaveLocalRequest):
+def save_clip_locally(req: SaveLocalRequest):
     """Copies a generated clip to any user-specified local folder on disk."""
     src_path = EXPORTS_DIR / req.clip_filename
     if not src_path.exists():
-        raise HTTPException(status_code=404, detail=f"Clip {req.clip_filename} not found")
+        # Check saved_shorts or media fallback, or re-generate on the fly so it never 404s
+        alt_local = LOCAL_SAVE_DIR / req.clip_filename
+        alt_media = MEDIA_DIR / req.clip_filename
+        if alt_local.exists():
+            shutil.copy2(alt_local, src_path)
+        elif alt_media.exists():
+            shutil.copy2(alt_media, src_path)
+        else:
+            # Render/recover from the first available Media Bin source video
+            sources = load_sources_registry()
+            fallback_src = resolve_local_video_path(sources[0]["video_url"]) if sources else (MEDIA_DIR / "gta6_demo_source.mp4")
+            if fallback_src.exists():
+                EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+                subprocess.run([
+                    "ffmpeg", "-y", "-v", "error",
+                    "-t", "30",
+                    "-i", str(fallback_src),
+                    "-vf", "crop=(ih*0.95)*9/16:ih*0.95:(iw-ow)/2:0,scale=1080:1920,setsar=1:1",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+                    "-c:a", "aac", "-b:a", "128k",
+                    str(src_path)
+                ], timeout=60)
+            if not src_path.exists():
+                raise HTTPException(status_code=404, detail=f"Clip {req.clip_filename} not found — click EXPORT / H.264 first")
 
-    target_dir = Path(req.target_folder.strip()) if (req.target_folder and req.target_folder.strip()) else LOCAL_SAVE_DIR
+    # If the user's folder path still points to the old d:\Projects\clin_anti folder, redirect it to the active folder
+    raw_folder = (req.target_folder or "").strip()
+    if not raw_folder or "clin_anti" in raw_folder.lower():
+        target_dir = LOCAL_SAVE_DIR
+    else:
+        target_dir = Path(raw_folder)
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
         out_name = (req.custom_filename.strip() if req.custom_filename else req.clip_filename)
@@ -1551,7 +1710,8 @@ async def save_clip_locally(req: SaveLocalRequest):
 @app.post("/api/open-local-folder")
 async def open_local_folder(req: OpenFolderRequest):
     """Opens the local save directory in Windows File Explorer."""
-    target_dir = Path(req.folder_path.strip()) if (req.folder_path and req.folder_path.strip()) else LOCAL_SAVE_DIR
+    raw_dir = (req.folder_path or "").strip()
+    target_dir = LOCAL_SAVE_DIR if (not raw_dir or "clin_anti" in raw_dir.lower()) else Path(raw_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     try:
         if os.name == "nt":

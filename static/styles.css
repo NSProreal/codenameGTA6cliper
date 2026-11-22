@@ -1918,6 +1918,164 @@ body.cursors-off .agent-cursor {
   min-height: 18px;
 }
 
+/* ---------- LIVE EXTRACTION PROGRESS PANEL INSIDE MODAL ---------- */
+.import-progress-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(14, 11, 20, 0.92);
+  border: 1px solid rgba(93, 242, 198, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.import-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.import-progress-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(93, 242, 198, 0.25);
+  border-top-color: var(--mint);
+  border-right-color: var(--pink);
+  animation: modalSpin 0.75s linear infinite;
+  display: inline-block;
+}
+
+.import-spinner.done {
+  animation: none;
+  border-color: var(--mint);
+  background: var(--mint);
+}
+
+@keyframes modalSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.import-progress-stage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.05em;
+}
+
+.import-progress-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.import-clip-badge,
+.import-timer-badge,
+.import-pct-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.import-clip-badge {
+  background: rgba(255, 77, 148, 0.16);
+  border: 1px solid var(--pink);
+  color: var(--pink);
+}
+
+.import-timer-badge {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #352c47;
+  color: #d7cfe8;
+}
+
+.import-pct-badge {
+  background: rgba(93, 242, 198, 0.16);
+  border: 1px solid var(--mint);
+  color: var(--mint);
+  min-width: 42px;
+  text-align: center;
+}
+
+.import-progress-track {
+  width: 100%;
+  height: 8px;
+  background: #1a1524;
+  border: 1px solid #2e253f;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.import-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pink) 0%, var(--mint) 100%);
+  box-shadow: 0 0 12px rgba(93, 242, 198, 0.55);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.import-log-feed {
+  margin-top: 8px;
+  max-height: 92px;
+  overflow-y: auto;
+  background: #09070d;
+  border: 1px solid #251e33;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: #cfc6e2;
+}
+
+.import-log-line {
+  display: flex;
+  gap: 6px;
+  padding: 1.5px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.04);
+}
+
+.import-log-line:last-child {
+  border-bottom: none;
+}
+
+.import-log-ts {
+  color: #7c7194;
+  flex-shrink: 0;
+}
+
+.import-log-tool {
+  color: var(--pink);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.import-log-msg {
+  color: #e3dcf2;
+  word-break: break-word;
+}
+
+.import-log-msg.success {
+  color: var(--mint);
+}
+
+.import-log-msg.error {
+  color: #ff5c7c;
+}
+
 @media (max-width: 980px) {
   .workspace-grid,
   .bottom-ops-grid {
