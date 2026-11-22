@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLIP STUDIO / VI — GTA 6 AI Viral Clipping Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="studio-shell">
+    <!-- TOP MICRO BAR -->
+    <div class="top-micro-bar">
+      <div class="micro-left">
+        <span class="pink-dot"></span>
+        <span id="projectNameLabel">PROJECT / GTA_VI_CLIPS</span>
+        <span class="engine-status-pill" id="engineStatusPill">GEMINI 2.5 FLASH + OPENCV READY</span>
+      </div>
+      <div class="micro-actions">
+        <button class="action-pill-btn btn-gemini" id="openGeminiModalBtn" title="Detect viral moments using Free Google Gemini API + OpenCV">
+          <span class="sparkle-icon">✦</span> AI VIRAL DETECT (GEMINI)
+        </button>
+        <button class="action-pill-btn btn-import" id="openImportModalBtn" title="Partial-download YouTube/Twitch VOD slice via yt-dlp or extract from huge local MP4/MKV">
+          + YT-DLP VOD / LOCAL FILE
+        </button>
+        <button class="action-pill-btn btn-postiz" id="openPostizModalBtn" title="Configure Manual or Automatic Postiz social delivery">
+          🚀 POSTIZ: <span id="postizModeBadge">MANUAL</span>
+        </button>
+        <button class="action-pill-btn btn-cursors active" id="toggleCursorsBtn" title="Toggle animated tool agent cursors">
+          AGENT CURSORS: ON
+        </button>
+        <span class="edit-preview-label">EDIT PREVIEW</span>
+      </div>
+    </div>
+
+    <!-- MAIN BRAND HEADER -->
+    <header class="brand-header">
+      <div class="brand-left">
+        <div class="brand-title-row">
+          <h1 class="brand-title">CLIP STUDIO</h1>
+          <span class="brand-vi">/ VI</span>
+        </div>
+        <div class="brand-subtitle" id="engineSubtitle">FREE GOOGLE GEMINI API &nbsp;·&nbsp; SMART SPEAKER CROP &nbsp;·&nbsp; LOCAL &amp; POSTIZ DELIVERY</div>
+      </div>
+      <div class="brand-right">
+        <div class="tagline-stack">
+          <div>CLIP IT.</div>
+          <div>SHIP IT.</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- PHASE STATUS, 15-60S SHORTS DURATION & NUMBER OF CLIPS BAR -->
+    <div class="phase-bar">
+      <div class="phase-code" id="phaseCode">02 / CUT</div>
+      <div class="phase-desc" id="phaseDesc">SPLIT / Find the moment</div>
+
+      <!-- HOW MANY CLIPS TO GENERATE (1-10) -->
+      <div class="shorts-duration-controls" title="Choose how many viral clips (1–10) to extract or generate">
+        <span class="dur-label">CLIPS COUNT:</span>
+        <button class="clips-count-btn active" data-count="1">1</button>
+        <button class="clips-count-btn" data-count="2">2</button>
+        <button class="clips-count-btn" data-count="3">3</button>
+        <button class="clips-count-btn" data-count="5">5</button>
+        <input type="number" id="numClipsMainInput" min="1" max="10" value="1" class="clips-num-input" title="Number of clips to generate (1 to 10)" />
+      </div>
+
+      <!-- 15-60 SECOND SHORTS CONTROLS -->
+      <div class="shorts-duration-controls" title="15–60 Second Shorts Duration Controls">
+        <span class="dur-label">LENGTH:</span>
+        <button class="dur-preset-btn" data-dur="15">15S</button>
+        <button class="dur-preset-btn active" data-dur="20">20S</button>
+        <button class="dur-preset-btn" data-dur="30">30S</button>
+        <button class="dur-preset-btn" data-dur="45">45S</button>
+        <button class="dur-preset-btn" data-dur="60">60S</button>
+        <input type="range" id="shortsDurationSlider" min="15" max="60" step="1" value="20" class="dur-range-slider" />
+        <span class="dur-readout" id="shortsDurationReadout">20s</span>
+      </div>
+
+      <div class="phase-timecode hidden" id="phaseTimecode"></div>
+    </div>
+
+    <!-- MAIN WORKSPACE GRID -->
+    <main class="workspace-grid">
+      <!-- LEFT COLUMN: PROGRAM / SOURCE_01 -->
+      <section class="panel program-panel">
+        <div class="panel-header">
+          <span class="panel-title">PROGRAM / SOURCE_01</span>
+          <div class="program-header-right">
+            <button class="mini-mode-btn active" id="smartSpeakerToggleBtn" title="Optional Smart Speaker Cropping (locks 9:16 crop onto active speaker face)">
+              SPEAKER CROP: ON
+            </button>
+            <button class="mini-mode-btn active" id="autoTrackToggleBtn" title="Toggle automatic keyframe interpolation">
+              AUTO-REFRAME: ON
+            </button>
+            <button class="mini-mode-btn" id="toggleCropGuideBtn" title="Show/hide crop frame guide on video">
+              CROP GUIDE: OFF
+            </button>
+          </div>
+        </div>
+
+        <div class="source-banner-row">
+          <span id="currentSourceLabel">GTA VI / STREAM CLIP</span>
+          <div class="banner-badges">
+            <span class="speaker-lock-badge" id="speakerLockBadge">🎙 SPEAKER LOCK: ACTIVE</span>
+            <span class="virality-badge" id="currentViralityBadge">VIRAL SCORE: 99%</span>
+          </div>
+        </div>
+
+        <!-- 16:9 VIDEO VIEWPORT (CLEAN - NO GREEN FRAME OR TIMER BY DEFAULT) -->
+        <div class="program-viewport" id="programViewport">
+          <video
+            id="sourceVideo"
+            src="/static/media/gta6_demo_source.mp4"
+            playsinline
+            preload="auto"
+            crossorigin="anonymous"
+          ></video>
+
+          <!-- 2D Facecam Overlay Box (Hidden by default) -->
+          <div class="facecam-overlay-box hidden" id="facecamOverlayBox" title="Drag 2D Facecam Box over streamer facecam">
+            <div class="facecam-top-tag">FACECAM (TOP 38%)</div>
+          </div>
+
+          <!-- Optional Crop Overlay Box (Hidden by default so no green frame covers video) -->
+          <div class="crop-overlay-box hidden" id="cropOverlayBox" title="Drag to reframe 9:16 output">
+            <div class="crop-top-tag" id="cropTopTag">9:16 / CROP 03</div>
+            <div class="crop-center-line"></div>
+            <div class="crop-corner tl"></div>
+            <div class="crop-corner tr"></div>
+            <div class="crop-corner bl"></div>
+            <div class="crop-corner br"></div>
+            <div class="crop-bottom-tag" id="cropBottomTag">X 43.1%</div>
+          </div>
+        </div>
+
+        <!-- LIVE CAPTION STAGE BOX -->
+        <div class="caption-stage-wrap">
+          <div class="caption-bounding-box" id="captionBoundingBox">
+            <span class="box-node tl"></span>
+            <span class="box-node tr"></span>
+            <span class="box-node bl"></span>
+            <span class="box-node br"></span>
+            <div
+              class="live-stage-caption"
+              id="liveStageCaption"
+              contenteditable="true"
+              spellcheck="false"
+              title="Click to edit caption text directly"
+            >CLIP THAT.</div>
+
+            <!-- Agent Cursor 16 Type -->
+            <div class="agent-cursor cursor-type" id="cursorType">
+              <div class="target-ring peach"></div>
+              <svg class="cursor-arrow peach-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+              <span class="cursor-pill peach-bg">16 Type</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTIVE TOOLS & TRANSPORT BAR (TIMER REMOVED) -->
+        <div class="program-footer">
+          <div class="active-tools-line" id="activeToolsLine">AI Shorts + OpenCut</div>
+          <div class="transport-row">
+            <div class="transport-controls">
+              <button class="transport-btn" id="playPauseBtn" title="Play / Pause (Space)">
+                <span class="pause-icon" id="pauseIcon">❚❚</span>
+                <span class="play-icon hidden" id="playIcon">▷</span>
+              </button>
+              <button class="transport-btn" id="stepBackBtn" title="Previous viral cut">⏮</button>
+              <button class="transport-btn" id="stepNextBtn" title="Next viral cut">⏭</button>
+              <button class="transport-btn" id="muteBtn" title="Mute / Unmute">🔊</button>
+              <button class="mini-mode-btn active" id="subclipAtPlayheadBtn" title="Slice a new clip starting at the current playhead from this video">+ CLIP HERE</button>
+            </div>
+            <div class="main-timecode hidden" id="mainTimecode"></div>
+            <div class="streamers-meta" id="streamersMeta">CLEAN STREAM SOURCE</div>
+          </div>
+          <div class="program-progress-track" id="programProgressTrack">
+            <div class="program-progress-fill" id="programProgressFill"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN: MEDIA BIN, INSPECTOR, 9:16 OUTPUT PREVIEW -->
+      <div class="right-column">
+        <!-- 1. MEDIA BIN / SOURCE MOMENTS -->
+        <section class="panel media-bin-panel">
+          <div class="panel-header">
+            <span class="panel-title">MEDIA BIN / SOURCE MOMENTS</span>
+            <div class="logs-header-actions">
+              <button class="mini-mode-btn active" id="moreClipsSameVideoBtn" title="Extract more non-overlapping viral clips from the same video/stream VOD">+ MORE (SAME VIDEO)</button>
+              <button class="mini-clear-btn" id="clearAllSourcesBtn" title="Remove all videos from Media Bin">🗑 CLEAR ALL</button>
+              <button class="mini-link-btn" id="quickAddMediaBtn">+ VOD URL / FILE</button>
+            </div>
+          </div>
+          <div class="media-bin-grid" id="mediaBinGrid">
+            <!-- Dynamically populated source cards -->
+          </div>
+          <!-- Agent Cursor 05 Select -->
+          <div class="agent-cursor cursor-select" id="cursorSelect">
+            <svg class="cursor-arrow pink-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+            <span class="cursor-pill pink-bg">05 Select</span>
+          </div>
+        </section>
+
+        <!-- 2. INSPECTOR / LIVE EDIT -->
+        <section class="panel inspector-panel">
+          <div class="panel-header">
+            <span class="panel-title">INSPECTOR / LIVE EDIT</span>
+            <span class="panel-meta-pink">KEYFRAMES</span>
+          </div>
+
+          <div class="inspector-caption-box">
+            <input
+              type="text"
+              id="inspectorCaptionInput"
+              class="inspector-caption-input"
+              value="CLIP THAT."
+              placeholder="ENTER VIRAL CAPTION..."
+            />
+          </div>
+
+          <div class="inspector-font-row">
+            <span class="inspector-label">ANTON</span>
+            <div class="font-slider-wrap">
+              <input type="range" id="fontSizeSlider" min="28" max="64" value="44" class="peach-slider" />
+            </div>
+            <span class="inspector-val" id="fontSizeVal">44 PX</span>
+          </div>
+
+          <div class="inspector-split">
+            <!-- Left: Motion Crop -->
+            <div class="motion-crop-col">
+              <div class="inspector-label">MOTION CROP (9:16)</div>
+              <div class="crop-x-readout">
+                <span class="x-symbol">X</span>
+                <span id="cropXPercentText">43.1%</span>
+                <span class="zoom-readout-pill" id="cropZoomText">1.00x</span>
+              </div>
+              <input type="range" id="cropXSlider" min="15.8" max="84.2" step="0.1" value="43.1" class="mint-slider" title="Horizontal X Position (15.8% = Flush Left, 84.2% = Flush Right)" />
+              <div class="zoom-y-row">
+                <span class="inspector-label">Y</span>
+                <input type="range" id="cropYSlider" min="20" max="80" step="1" value="50" class="mint-slider" title="Vertical Y Position (Facecam / Zoom height)" />
+                <span class="inspector-label">ZOOM</span>
+                <input type="range" id="cropZoomSlider" min="1.0" max="2.2" step="0.05" value="1.0" class="peach-slider" title="Zoom scale (1.0x to 2.2x)" />
+              </div>
+              <div class="safe-area-label" id="safeAreaLabel">9:16 / SMART SPEAKER</div>
+              <button class="keyframe-add-btn" id="addKeyframeBtn">+ KEYFRAME 03</button>
+
+              <div class="rgb-row">
+                <span class="inspector-label">RGB</span>
+                <input type="range" id="rgbBoostSlider" min="0" max="15" step="0.5" value="6.0" class="lime-slider" />
+                <span class="rgb-val" id="rgbBoostVal">+6.0</span>
+              </div>
+            </div>
+
+            <!-- Right: Easing / Position & Color Curves -->
+            <div class="easing-col">
+              <div class="inspector-label">EASING &nbsp;/&nbsp; POSITION</div>
+              <div class="spline-graph-wrap">
+                <svg id="motionSplineSvg" viewBox="0 0 180 70" class="motion-spline-svg">
+                  <line x1="10" y1="60" x2="170" y2="12" stroke="#302840" stroke-width="1.5" />
+                  <path id="splinePath" d="M 10 60 Q 65 54, 95 36 T 170 12" fill="none" stroke="#A88BEB" stroke-width="2.2" />
+                  <circle cx="15" cy="58" r="3" fill="#A88BEB" />
+                  <circle cx="62" cy="50" r="3" fill="#A88BEB" />
+                  <circle cx="95" cy="36" r="3.5" fill="#A88BEB" />
+                  <circle id="activeSplineNode" cx="132" cy="22" r="4.5" fill="#120E1A" stroke="#A88BEB" stroke-width="2.5" />
+                  <circle id="activeSplineRing" cx="132" cy="22" r="10" fill="none" stroke="#A88BEB" stroke-width="1.2" stroke-dasharray="3 2" />
+                  <circle cx="168" cy="13" r="3" fill="#A88BEB" />
+                </svg>
+
+                <!-- Agent Cursor 17 Motion -->
+                <div class="agent-cursor cursor-motion" id="cursorMotion">
+                  <svg class="cursor-arrow lavender-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+                  <span class="cursor-pill lavender-bg">17 Motion</span>
+                </div>
+              </div>
+
+              <!-- RGB Color Curve -->
+              <div class="color-curve-wrap">
+                <svg viewBox="0 0 180 34" class="color-curve-svg">
+                  <path d="M 8 28 Q 90 15, 172 10" fill="none" stroke="#FF4D94" stroke-width="1.4" opacity="0.85" />
+                  <path d="M 8 30 Q 90 17, 172 8" fill="none" stroke="#5CE6C4" stroke-width="1.4" opacity="0.85" />
+                  <path d="M 8 29 Q 90 13, 172 11" fill="none" stroke="#F5A66B" stroke-width="1.6" />
+                  <circle id="colorCurveNode" cx="110" cy="15" r="3.5" fill="#F5A66B" />
+                </svg>
+
+                <!-- Agent Cursor 19 Color -->
+                <div class="agent-cursor cursor-color" id="cursorColor">
+                  <svg class="cursor-arrow lime-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+                  <span class="cursor-pill lime-bg">19 Color</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. 9:16 / OUTPUT PREVIEW -->
+        <section class="panel output-preview-panel">
+          <div class="panel-header">
+            <span class="panel-title">9:16 / OUTPUT PREVIEW</span>
+            <div class="layout-toggle-group">
+              <button class="layout-pill active" id="modeCropBtn" title="Full 9:16 Vertical Crop (with Zoom & X/Y Pan)">9:16 CROP</button>
+              <button class="layout-pill" id="modeSplitBtn" title="Gamer Split-Screen: Top 38% 2D Facecam + Bottom 62% Center Game">SPLIT CAM</button>
+              <button class="layout-pill" id="modeFitBlurBtn" title="Uncropped Full 16:9 Stream fitted inside 9:16 Blurred Vertical Frame">FIT 16:9</button>
+            </div>
+          </div>
+
+          <div class="output-preview-body">
+            <!-- Live Vertical 9:16 Canvas Phone Frame -->
+            <div class="phone-preview-frame">
+              <canvas id="verticalPreviewCanvas" width="270" height="480"></canvas>
+              <div class="phone-caption-bar">
+                <span id="phoneCaptionText">CLIP THAT.</span>
+              </div>
+            </div>
+
+            <!-- Export Controls & Level Meter -->
+            <div class="export-info-col">
+              <div class="short-title-row">
+                <h3 class="short-title" id="shortTitleHeading">SHORT_01</h3>
+                <span class="export-ready-dot"></span>
+                <span class="short-dur-pill" id="shortDurPill">20S</span>
+                <span class="short-dur-pill" id="shortClipsCountPill" style="border-color:var(--mint);color:var(--mint);">1 CLIP</span>
+              </div>
+              <div class="short-specs">9:16 &nbsp;/&nbsp; H.264 &nbsp;·&nbsp; 1080×1920 @ 60FPS</div>
+              <div class="short-subspecs" id="outputSubspecs">SPEAKER CROP + LIBASS CAPTIONS</div>
+
+              <div class="export-action-row">
+                <button class="export-h264-btn" id="exportH264Btn" onclick="window.runH264Export && window.runH264Export(false)" title="Render 9:16 H.264 MP4 Short">
+                  <span id="exportBtnText">EXPORT / H.264</span>
+                </button>
+                <button class="save-local-btn" id="saveLocallyMainBtn" onclick="window.runH264Export && window.runH264Export(true)" title="Render & Save MP4 directly to your local folder + trigger browser save">
+                  💾 SAVE LOCALLY
+                </button>
+
+                <!-- Multi-bar Audio Meter -->
+                <div class="level-meter" id="levelMeter">
+                  <span class="meter-bar g" style="height: 55%"></span>
+                  <span class="meter-bar g" style="height: 82%"></span>
+                  <span class="meter-bar g" style="height: 68%"></span>
+                  <span class="meter-bar g" style="height: 92%"></span>
+                  <span class="meter-bar g" style="height: 75%"></span>
+                  <span class="meter-bar o" style="height: 62%"></span>
+                  <span class="meter-bar o" style="height: 85%"></span>
+                </div>
+              </div>
+              <div class="local-folder-row">
+                <span class="local-folder-label">LOCAL PATH:</span>
+                <input
+                  type="text"
+                  id="localSaveDirInput"
+                  class="local-folder-input"
+                  value="D:\Projects\clin_anti\saved_shorts"
+                  title="Local folder where exported Shorts are saved on your PC"
+                />
+                <button class="open-folder-btn" id="openLocalFolderBtn" title="Open local save folder in Windows File Explorer">📂 OPEN</button>
+              </div>
+              <div id="exportResultBanner" class="export-result-banner hidden"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- SEQUENCE / SHORT_01 TIMELINE PANEL -->
+    <section class="panel timeline-panel">
+      <div class="panel-header">
+        <span class="panel-title">SEQUENCE / SHORT_01</span>
+        <div class="timeline-header-right">
+          <span class="snap-label">SNAP</span>
+          <span class="pink-dot-sm"></span>
+          <span class="timeline-duration-label" id="timelineDurationLabel">20.00 SEC</span>
+        </div>
+      </div>
+
+      <div class="timeline-container" id="timelineContainer">
+        <!-- Time Ruler -->
+        <div class="timeline-ruler" id="timelineRuler">
+          <div class="track-label-spacer"></div>
+          <div class="ruler-ticks" id="rulerTicks">
+            <span style="left: 0%">00</span>
+            <span style="left: 25%">05</span>
+            <span style="left: 50%">10</span>
+            <span style="left: 75%">15</span>
+            <span style="left: 98.5%">20</span>
+          </div>
+        </div>
+
+        <!-- Tracks Area -->
+        <div class="timeline-tracks-wrap" id="timelineTracksWrap">
+          <!-- Playhead Line -->
+          <div class="timeline-playhead" id="timelinePlayhead" style="left: 42.5%">
+            <div class="playhead-head"></div>
+          </div>
+
+          <!-- TRACK 1: SOURCE FILMSTRIP -->
+          <div class="timeline-track source-track">
+            <div class="track-label">SOURCE</div>
+            <div class="track-lane source-lane" id="sourceLane">
+              <div class="filmstrip-bg" id="filmstripBg"></div>
+              <div class="cut-dividers" id="cutDividers"></div>
+
+              <!-- Agent Cursor 02 Trim -->
+              <div class="agent-cursor cursor-trim" id="cursorTrim">
+                <svg class="cursor-arrow pink-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+                <span class="cursor-pill pink-bg">02 Trim</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TRACK 2: CAPTIONS -->
+          <div class="timeline-track captions-track">
+            <div class="track-label">CAPTIONS</div>
+            <div class="track-lane captions-lane" id="captionsLane"></div>
+          </div>
+
+          <!-- TRACK 3: REFRAME KEYFRAMES -->
+          <div class="timeline-track reframe-track">
+            <div class="track-label">REFRAME</div>
+            <div class="track-lane reframe-lane" id="reframeLane">
+              <svg id="reframeTimelineSvg" class="reframe-timeline-svg" preserveAspectRatio="none" viewBox="0 0 1000 32"></svg>
+            </div>
+          </div>
+
+          <!-- TRACK 4: AUDIO WAVEFORM -->
+          <div class="timeline-track audio-track">
+            <div class="track-label">AUDIO</div>
+            <div class="track-lane audio-lane" id="audioLane">
+              <div class="waveform-bars" id="waveformBars"></div>
+              <div class="audio-gain-line"></div>
+
+              <!-- Agent Cursor 13 Audio -->
+              <div class="agent-cursor cursor-audio" id="cursorAudio">
+                <div class="target-ring mint"></div>
+                <svg class="cursor-arrow mint-fill" viewBox="0 0 24 24"><path d="M4 3l16 7-7 2-2 7z"/></svg>
+                <span class="cursor-pill mint-bg">-2.6 dB &nbsp; 13 Audio</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEW DUAL DOCK: LIVE PROCESSING LOGS + GENERATED CLIPS / POSTIZ DOWNLOADS -->
+    <div class="bottom-ops-grid">
+      <!-- LEFT: LIVE PROCESSING LOGS -->
+      <section class="panel logs-panel">
+        <div class="panel-header">
+          <div class="logs-title-wrap">
+            <span class="live-pulse-dot"></span>
+            <span class="panel-title">LIVE PROCESSING LOGS</span>
+          </div>
+          <div class="logs-header-actions">
+            <span class="panel-meta" id="logsCountLabel">STREAM ACTIVE</span>
+            <button class="mini-clear-btn" id="clearLogsBtn">CLEAR</button>
+          </div>
+        </div>
+        <div class="logs-terminal" id="logsTerminal">
+          <!-- Populated in real time via /api/logs -->
+        </div>
+      </section>
+
+      <!-- RIGHT: GENERATED CLIPS / LOCAL SAVE & POSTIZ DELIVERY -->
+      <section class="panel downloads-panel">
+        <div class="panel-header">
+          <span class="panel-title">GENERATED CLIPS / LOCAL SAVE &amp; POSTIZ</span>
+          <div class="logs-header-actions">
+            <button class="mini-clear-btn" id="clearAllClipsBtn" title="Remove all generated clips">🗑 CLEAR ALL</button>
+            <button class="mini-clear-btn" id="openSavedFolderGalleryBtn" title="Open local saved_shorts folder in Windows Explorer">📂 OPEN SAVED FOLDER</button>
+            <button class="mini-link-btn" id="configPostizFromGalleryBtn">⚙ POSTIZ CONFIG</button>
+          </div>
+        </div>
+        <div class="clips-gallery-list" id="clipsGalleryList">
+          <!-- Populated dynamically from /api/clips -->
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- MODAL 1: FREE GOOGLE GEMINI AI VIRAL MOMENT DETECTOR -->
+  <div class="modal-backdrop hidden" id="geminiModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>✦ GEMINI 2.5 FLASH — GTA VI VIRAL DETECTOR</h2>
+        <button class="modal-close-btn" id="closeGeminiModalBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Uses the <strong>Free Google Gemini API</strong> (<code>gemini-2.5-flash</code>) + <strong>Smart Speaker Cropping (OpenCV)</strong> + <strong>FFmpeg Audio Peak Analysis</strong> to generate a 15–60s viral Short sequence.
+        </p>
+        <label class="field-label">
+          FREE GOOGLE GEMINI API KEY
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="get-key-link">Get Free Key at Google AI Studio ↗</a>
+        </label>
+        <input
+          type="password"
+          id="geminiApiKeyInput"
+          class="modal-input"
+          placeholder="AIzaSy... (Leave blank to use built-in Local OpenCV + Audio Peak AI)"
+        />
+
+        <div class="modal-two-col">
+          <div>
+            <label class="field-label">TARGET SHORT DURATION (15–60S)</label>
+            <input type="number" id="geminiTargetDurInput" class="modal-input" min="15" max="60" value="20" />
+          </div>
+          <div>
+            <label class="field-label">SMART SPEAKER CROPPING</label>
+            <select id="geminiSpeakerCropSelect" class="modal-input">
+              <option value="true" selected>ON (Lock onto active speaker face)</option>
+              <option value="false">OFF (Steady center 9:16 crop)</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="field-label">VIRAL DETECTION FOCUS</label>
+        <input
+          type="text"
+          id="geminiPromptInput"
+          class="modal-input"
+          value="Find the highest-energy GTA VI trailer shots, chaotic gameplay moments, and loud streamer reactions."
+        />
+
+        <div class="modal-status" id="geminiModalStatus"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-secondary-btn" id="cancelGeminiModalBtn">CANCEL</button>
+        <button class="modal-primary-btn" id="runGeminiAnalyzeBtn">✦ RUN VIRAL MOMENT DETECTION</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: SMART STREAM VOD PARTIAL DOWNLOADER (YT-DLP) OR LOCAL FILE -->
+  <div class="modal-backdrop hidden" id="importModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>+ STREAM VOD PARTIAL EXTRACTOR (YT-DLP / LOCAL FILE)</h2>
+        <button class="modal-close-btn" id="closeImportModalBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          <strong>Zero Multi-GB Wait:</strong> For huge 4-hour Twitch/YouTube stream VODs or local OBS recordings, this engine probes the <strong>YouTube Most Replayed heatmap</strong> (or your start timestamp) and extracts <strong>only the 15–60s viral window</strong>.
+        </p>
+
+        <div class="modal-three-col">
+          <div>
+            <label class="field-label">HOW MANY CLIPS (1–10)</label>
+            <input type="number" id="importNumClipsInput" class="modal-input" min="1" max="10" value="1" title="Number of distinct viral clips to extract from the VOD" />
+          </div>
+          <div>
+            <label class="field-label">CLIP LENGTH (15–60S)</label>
+            <input type="number" id="importWindowDurInput" class="modal-input" min="15" max="60" value="30" />
+          </div>
+          <div>
+            <label class="field-label">START TIME (SECONDS)</label>
+            <input type="number" id="importStartOffsetInput" class="modal-input" min="0" placeholder="Auto Heatmap" />
+          </div>
+        </div>
+
+        <div class="import-section">
+          <label class="field-label">01 / YOUTUBE OR TWITCH STREAM URL (YT-DLP PARTIAL RANGE)</label>
+          <div class="url-input-row">
+            <input
+              type="text"
+              id="ytdlpUrlInput"
+              class="modal-input"
+              placeholder="https://www.youtube.com/watch?v=QdBZY2fkU-0 or Twitch VOD URL"
+            />
+            <input
+              type="text"
+              id="ytdlpTagInput"
+              class="modal-input tag-short-input"
+              placeholder="TAG (e.g. GTA6)"
+            />
+          </div>
+          <button class="modal-primary-btn full-w" id="runYtdlpBtn">↓ EXTRACT VIRAL WINDOW VIA YT-DLP</button>
+        </div>
+
+        <div class="divider-or"><span>OR EXTRACT FROM HUGE LOCAL OBS / STREAM RECORDING</span></div>
+
+        <div class="import-section">
+          <label class="field-label">04 / LOCAL MP4, MKV, MOV, WEBM FILE (INSTANT KEYFRAME SEEK)</label>
+          <div class="url-input-row">
+            <input type="file" id="localVideoFileInput" accept="video/*" class="modal-input" />
+            <input type="text" id="uploadTagInput" class="modal-input tag-short-input" placeholder="TAG (e.g. VOD)" />
+          </div>
+          <button class="modal-primary-btn full-w" id="runUploadBtn">↑ EXTRACT LOCAL WINDOW &amp; SPEAKER-TRACK</button>
+        </div>
+
+        <div class="modal-status" id="importModalStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: POSTIZ MANUAL / AUTOMATIC SOCIAL DELIVERY -->
+  <div class="modal-backdrop hidden" id="postizModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>🚀 POSTIZ DELIVERY — MANUAL OR AUTOMATIC PUBLISHING</h2>
+        <button class="modal-close-btn" id="closePostizModalBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Connect your <strong>Postiz</strong> instance (Cloud or Self-Hosted) to deliver rendered 9:16 GTA VI Shorts to <strong>TikTok, YouTube Shorts, Instagram Reels, and X</strong> either manually per clip or automatically on export.
+        </p>
+
+        <div class="modal-two-col">
+          <div>
+            <label class="field-label">DELIVERY TRIGGER MODE</label>
+            <select id="postizModeSelect" class="modal-input">
+              <option value="manual" selected>MANUAL (Review &amp; click Publish per clip)</option>
+              <option value="auto">AUTOMATIC (Auto-publish immediately on Export)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">SCHEDULE TYPE</label>
+            <select id="postizScheduleSelect" class="modal-input">
+              <option value="now" selected>Publish Immediately (NOW)</option>
+              <option value="draft">Save as Postiz Draft</option>
+              <option value="scheduled">Add to Next Queue Slot</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-two-col">
+          <div>
+            <label class="field-label">POSTIZ API BASE URL</label>
+            <input
+              type="text"
+              id="postizApiUrlInput"
+              class="modal-input"
+              value="https://api.postiz.com/public/v1"
+            />
+          </div>
+          <div>
+            <label class="field-label">POSTIZ API KEY (OPTIONAL FOR SANDBOX)</label>
+            <input
+              type="password"
+              id="postizApiKeyInput"
+              class="modal-input"
+              placeholder="Paste Postiz API key (or leave blank for queue sandbox)"
+            />
+          </div>
+        </div>
+
+        <label class="field-label">TARGET SOCIAL CHANNELS</label>
+        <div class="channel-checkbox-row">
+          <label class="ch-check"><input type="checkbox" value="tiktok" checked /> TikTok</label>
+          <label class="ch-check"><input type="checkbox" value="youtube_shorts" checked /> YouTube Shorts</label>
+          <label class="ch-check"><input type="checkbox" value="instagram_reels" checked /> Instagram Reels</label>
+          <label class="ch-check"><input type="checkbox" value="x_twitter" /> X / Twitter</label>
+        </div>
+
+        <label class="field-label">VIRAL POST CAPTION &amp; HASHTAGS</label>
+        <input
+          type="text"
+          id="postizCaptionInput"
+          class="modal-input"
+          value="GTA VI moment that broke the stream 🔥 #GTA6 #GTAVI #Shorts #Gaming"
+        />
+
+        <div class="modal-status" id="postizModalStatus"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-secondary-btn" id="cancelPostizModalBtn">CLOSE</button>
+        <button class="modal-primary-btn" id="savePostizConfigBtn">✓ SAVE POSTIZ SETTINGS</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
