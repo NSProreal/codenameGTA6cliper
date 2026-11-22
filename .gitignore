@@ -1,0 +1,29 @@
+# Locally saved 9:16 vertical Shorts
+saved_shorts/
+Saves_shorts/
+
+# Temporary uploads, yt-dlp temp chunks & generated ASS subtitle scripts
+uploads/
+
+# Generated exports & downloaded VOD clips
+static/exports/*.mp4
+static/exports/clips_registry.json
+static/media/ytdlp_*
+static/media/source_*
+static/media/sources_registry.json
+
+# Python & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Environment variables & API keys
+.env
+.env.local
+
+# OS metadata
+.DS_Store
+Thumbs.db
