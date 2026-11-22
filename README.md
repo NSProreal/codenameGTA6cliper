@@ -1,6 +1,6 @@
 # CLIP STUDIO / VI — AI Viral Shorts & Stream Clipping Studio
 
-<img src="https://ibb.co/xtXrNNfP" alt="Image patch" loading="lazy" />
+<img src="https://i.ibb.co/C3mSffMN/fullpage-snapshot-127-0-0-1-2026-11-22-18-52-54.png" alt="Image patch" loading="lazy" />
 
 **CLIP STUDIO / VI** is a full-stack AI-powered video clipping and 9:16 vertical short-form editing web application built for long-form gaming streams, Twitch/YouTube VODs, and local OBS recordings.
 
