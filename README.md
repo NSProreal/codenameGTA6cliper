@@ -1,5 +1,7 @@
 # CLIP STUDIO / VI — AI Viral Shorts & Stream Clipping Studio
 
+<img src="https://ibb.co/xtXrNNfP" alt="Image patch" loading="lazy" />
+
 **CLIP STUDIO / VI** is a full-stack AI-powered video clipping and 9:16 vertical short-form editing web application built for long-form gaming streams, Twitch/YouTube VODs, and local OBS recordings.
 
 It combines **Free Google Gemini API (`gemini-2.5-flash`)** multimodal viral moment detection, **OpenCV 5.x** smart speaker/subject tracking, **`yt-dlp` + FFmpeg HTTP range partial stream extraction** (clipping 24-hour multi-GB stream VODs in seconds without downloading the entire file), **`pysubs2` / `libass`** kinetic subtitles, and **Postiz** social publishing.
